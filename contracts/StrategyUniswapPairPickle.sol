@@ -156,8 +156,7 @@ contract StrategyUniswapPairPickle is BaseStrategy {
      * are sustained for long periods of time.
      */
     function prepareReturn(uint256 _debtOutstanding) internal override returns (uint256 _profit, uint256 _loss) {
-        if (_debtOutstanding > 0) liquidatePosition(_debtOutstanding);
-        setReserve(want.balanceOf(address(this)).sub(_debtOutstanding));
+
         // Claim Pickle rewards from Pickle Chef
         PickleChef(chef).deposit(pid, 0);
         // Claim WETH rewards from Pickle Staking
@@ -169,7 +168,33 @@ contract StrategyUniswapPairPickle is BaseStrategy {
             swap(weth, token1, _weth / 2);
             add_liquidity();
         }
-        return (want.balanceOf(address(this)).sub(getReserve()), 0);
+        
+        uint256 totalDebt = vault.strategies(address(this)).totalDebt;
+        uint256 totalAssets = estimatedTotalAssets();
+
+        uint256 looseBalance = want.balanceOf(address(this));
+        uint256 neededLooseBalance;
+
+        //if we have more than debt we are in profit. otherwise we are in loss
+        if(totalAssets < totalDebt){
+            _loss = totalDebt - totalAssets;
+            neededLooseBalance= _debtOutstanding;
+
+        }else{
+            _profit = totalAssets - totalDebt;
+            neededLooseBalance = _debtOutstanding.add(_profit);
+        }
+        
+        if(neededLooseBalance > looseBalance) liquidatePosition(neededLooseBalance-looseBalance);
+        
+        looseBalance = want.balanceOf(address(this));
+        if(looseBalance > neededLooseBalance){            
+            setReserve(looseBalance - neededLooseBalance);
+        }else{
+            setReserve(0);
+        }
+
+        return;
     }
 
     /*
